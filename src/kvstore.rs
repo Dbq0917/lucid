@@ -1,11 +1,18 @@
 use block_modes::block_padding::ZeroPadding;
 use block_modes::{BlockMode, Cbc};
-use chashmap::CHashMap;
 use chrono::{DateTime, Duration, Utc};
+use std::collections::hash_map::DefaultHasher;
+use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
+use std::sync::RwLock;
 
 use serpent::Serpent;
 
 type SerpentCbc = Cbc<Serpent, ZeroPadding>;
+
+const SHARD_COUNT: usize = 16;
+
+type Shard = RwLock<HashMap<String, KvElement>>;
 
 #[derive(Debug, Clone)]
 pub struct KvElement {
@@ -19,7 +26,7 @@ pub struct KvElement {
 }
 
 pub struct KvStore {
-    container: CHashMap<String, KvElement>,
+    shards: [RwLock<HashMap<String, KvElement>>; SHARD_COUNT],
     cipher: Option<Cipher>,
 }
 
@@ -32,7 +39,7 @@ impl KvStore {
     pub fn new(cipher: Option<[&str; 2]>) -> KvStore {
         // TODO: prepare looped persistence
         let mut kv = KvStore {
-            container: CHashMap::new(),
+            shards: Default::default(),
             cipher: None,
         };
 
@@ -46,6 +53,13 @@ impl KvStore {
         kv
     }
 
+    fn shard_for_key(&self, key: &str) -> &Shard {
+        let mut hasher = DefaultHasher::new();
+        key.hash(&mut hasher);
+        let index = hasher.finish() as usize % SHARD_COUNT;
+        &self.shards[index]
+    }
+
     pub fn set(&self, key: String, mut value: Vec<u8>, mime: Option<String>) -> Option<KvElement> {
         // TODO: prepare iterative persistence
         if let Some(c) = &self.cipher {
@@ -56,7 +70,8 @@ impl KvStore {
             Some(gived_mimetype) => gived_mimetype,
             None => tree_magic::from_u8(value.as_ref()).to_string(),
         };
-        match &mut self.container.get_mut(&key) {
+        let mut shard = self.shard_for_key(&key).write().unwrap();
+        match shard.get_mut(&key) {
             Some(kv_element) => {
                 if !kv_element.locked {
                     kv_element.data = value;
@@ -76,28 +91,27 @@ impl KvStore {
                     update_count: 1,
                     locked: false,
                 };
-                self.container.insert(key, kv_element)
+                shard.insert(key, kv_element)
             }
         }
     }
 
-    pub fn get(&self, key: String) -> Option<KvElement> {
-        match self.container.get(&key) {
-            Some(value) => {
-                let mut cloned_value = value.clone();
+    pub fn get(&self, key: &str) -> Option<KvElement> {
+        let value = self.shard_for_key(&key).read().unwrap().get(key).cloned()?;
 
-                if let Some(c) = &self.cipher {
-                    let cipher = SerpentCbc::new_var(&c.priv_key, &c.iv).unwrap();
-                    cloned_value.data = cipher.decrypt_vec(&value.data).unwrap();
-                }
-                Some(cloned_value)
+        match &self.cipher {
+            Some(c) => {
+                let cipher = SerpentCbc::new_var(&c.priv_key, &c.iv).unwrap();
+                let mut value = value;
+                value.data = cipher.decrypt_vec(&value.data).unwrap();
+                Some(value)
             }
-            None => None,
+            None => Some(value),
         }
     }
 
     pub fn switch_lock(&self, key: String, to_lock: bool) -> bool {
-        match &mut self.container.get_mut(&key) {
+        match self.shard_for_key(&key).write().unwrap().get_mut(&key) {
             Some(kv_element) => {
                 if kv_element.locked == to_lock {
                     return false;
@@ -110,7 +124,7 @@ impl KvStore {
     }
 
     pub fn increment_or_decrement(&self, key: String, value: f64) -> bool {
-        match &mut self.container.get_mut(&key) {
+        match self.shard_for_key(&key).write().unwrap().get_mut(&key) {
             Some(kv_element) => {
                 let byte_to_string = String::from_utf8(kv_element.clone().data).unwrap(); // TODO: handle convert to string error
                 match byte_to_string.trim().parse::<f64>() {
@@ -128,7 +142,7 @@ impl KvStore {
     }
 
     pub fn set_expiration(&self, key: String, ttl: i64) -> Option<DateTime<Utc>> {
-        match &mut self.container.get_mut(&key) {
+        match self.shard_for_key(&key).write().unwrap().get_mut(&key) {
             Some(kv_element) => {
                 let expiration_date = Utc::now() + Duration::seconds(ttl);
                 kv_element.expire_at = expiration_date;
@@ -141,6 +155,6 @@ impl KvStore {
     }
 
     pub fn drop(&self, key: String) {
-        self.container.remove(&key);
+        self.shard_for_key(&key).write().unwrap().remove(&key);
     }
 }

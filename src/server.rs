@@ -268,7 +268,7 @@ async fn put_key(
 }
 
 async fn get_key(store: Arc<KvStore>, key: String) -> Result<impl Reply, Rejection> {
-    match store.get(key) {
+    match store.get(&key) {
         Some(value) => Ok(Response::builder()
             .header("Content-Type", value.mime_type)
             .body(value.data)),
@@ -277,7 +277,7 @@ async fn get_key(store: Arc<KvStore>, key: String) -> Result<impl Reply, Rejecti
 }
 
 async fn find_key(store: Arc<KvStore>, key: String) -> Result<impl Reply, Rejection> {
-    match store.get(key) {
+    match store.get(&key) {
         Some(value) => Ok(Response::builder()
             .status(StatusCode::OK)
             .header("Content-Type", value.mime_type)
@@ -290,7 +290,7 @@ async fn find_key(store: Arc<KvStore>, key: String) -> Result<impl Reply, Reject
 }
 
 async fn delete_key(store: Arc<KvStore>, key: String) -> Result<impl Reply, Rejection> {
-    match store.get(key.clone()) {
+    match store.get(&key) {
         Some(_) => {
             (*store).drop(key);
             Ok(warp::reply::with_status(warp::reply::json(&JsonMessage {
@@ -311,7 +311,7 @@ async fn patch_key(
     key: String,
     patch_value: PatchValue,
 ) -> Result<impl Reply, Rejection> {
-    if let Some(_) = store.get(key.clone()) {
+    if store.get(&key).is_some() {
         match patch_value.operation.to_lowercase().as_str() {
             "lock" => {
                 match store.switch_lock(key.to_string(), true) {
