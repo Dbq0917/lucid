@@ -49,9 +49,11 @@ A demonstration node is accessible at <https://lucid-kv.herokuapp.com/> or deplo
 
 You can quickly start [here](https://github.com/lucid-kv/lucid/wiki) or get the complete documentation at <https://clintnetwork.gitbook.io/lucid/>.
 
-## Works in Progress
+## Persistence
 
-You can take a look at the roadmap [here](https://github.com/lucid-kv/lucid/issues/64), we are working on the implementation of persistence and encryption.
+Persistence is enabled by default. Lucid appends every mutation to a journal and syncs it in the background, so writes are not blocked by an `fsync` on every request. The journal is compacted into an atomic snapshot after enough records have accumulated, and pending changes are synced when the store is closed normally.
+
+Set `persistence.location` to a file or directory to choose the journal location. When it is empty, Lucid uses the platform application data directory. Set `persistence.enabled` to `false` to run with an in-memory store.
 
 ## Command Line Interface
 

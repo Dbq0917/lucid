@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, sync::RwLock};
+use std::{net::SocketAddr, path::PathBuf, sync::RwLock};
 
 use bytes::{Buf, Bytes};
 use jsonwebtoken::Validation;
@@ -54,7 +54,32 @@ impl Server {
                 ]);
             }
         }
-        let store = Arc::new(KvStore::new(encryption_key));
+        let store = Arc::new(if configuration.persistence.enabled {
+            let location = if configuration.persistence.location.trim().is_empty() {
+                match Configuration::get_data_dir() {
+                    Ok(path) => path,
+                    Err(error) => {
+                        warn!(
+                            "Unable to resolve the default data directory ({}), using ./.lucid",
+                            error
+                        );
+                        PathBuf::from(".lucid")
+                    }
+                }
+            } else {
+                PathBuf::from(&configuration.persistence.location)
+            };
+            info!("Persistence enabled at {}", location.display());
+            KvStore::with_persistence(encryption_key, &location).unwrap_or_else(|error| {
+                panic!(
+                    "Unable to open the persistence store at {}: {}",
+                    location.display(),
+                    error
+                )
+            })
+        } else {
+            KvStore::new(encryption_key)
+        });
         let event_tx = Arc::new(broadcast::channel(512).0); // TODO: Specify in configuration (maybe?)
 
         let instance = warp::serve(routes_filter(store, event_tx, self.configuration.clone()));

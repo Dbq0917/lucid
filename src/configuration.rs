@@ -12,8 +12,8 @@ const APP_INFO: AppInfo = AppInfo {
     author: "LucidKV",
 };
 
-#[serde(default)]
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
 pub struct Configuration {
     pub general: General,
     pub authentication: Authentication,
@@ -32,10 +32,14 @@ impl Configuration {
         path.push("lucid.yml");
         Ok(path)
     }
+
+    pub fn get_data_dir() -> Result<PathBuf, AppDirsError> {
+        app_dirs::get_app_root(AppDataType::UserData, &APP_INFO)
+    }
 }
 
-#[serde(default)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct General {
     pub bind_address: IpAddr,
     pub port: u16,
@@ -60,8 +64,8 @@ impl Default for General {
     }
 }
 
-#[serde(default)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Authentication {
     pub enabled: bool,
     pub root_token: String,
@@ -78,8 +82,8 @@ impl Default for Authentication {
     }
 }
 
-#[serde(default)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Persistence {
     pub enabled: bool,
     pub location: String,
@@ -88,14 +92,14 @@ pub struct Persistence {
 impl Default for Persistence {
     fn default() -> Self {
         Self {
-            enabled: false,
+            enabled: true,
             location: String::new(),
         }
     }
 }
 
-#[serde(default)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Encryption {
     pub enabled: bool,
     pub private_key: String,
@@ -112,8 +116,8 @@ impl Default for Encryption {
     }
 }
 
-#[serde(default)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ServerSentEvent {
     pub enabled: bool,
 }
@@ -124,8 +128,8 @@ impl Default for ServerSentEvent {
     }
 }
 
-#[serde(default)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct WebUI {
     pub enabled: bool,
 }
@@ -136,8 +140,8 @@ impl Default for WebUI {
     }
 }
 
-#[serde(default)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Store {
     pub max_limit: u64,
 }
@@ -148,8 +152,8 @@ impl Default for Store {
     }
 }
 
-#[serde(default)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Http {
     pub request_size_limit: u64,
 }
@@ -162,8 +166,8 @@ impl Default for Http {
     }
 }
 
-#[serde(default)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Logging {
     pub level: LevelFilter,
     pub outputs: Vec<LogOutput>,
