@@ -1,7 +1,7 @@
 use std::sync::{Arc, RwLock};
 
 use hyper::StatusCode;
-use serde_json::Value;
+use serde_json::{json, Value};
 use tokio::sync::broadcast;
 use warp::{Filter, Reply};
 
@@ -83,6 +83,61 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(&*body, b"bar");
+    }
+
+    #[tokio::test]
+    async fn set_rejects_a_locked_key() {
+        let routes = create_routes_filter();
+
+        let create_reply = warp::test::request()
+            .method("PUT")
+            .path("/api/kv/foo")
+            .body(b"original")
+            .filter(&routes)
+            .await
+            .unwrap();
+        assert_eq!(create_reply.into_response().status(), StatusCode::CREATED);
+
+        let lock_reply = warp::test::request()
+            .method("PATCH")
+            .path("/api/kv/foo")
+            .json(&json!({ "operation": "lock" }))
+            .filter(&routes)
+            .await
+            .unwrap();
+        assert_eq!(lock_reply.into_response().status(), StatusCode::OK);
+
+        let update_reply = warp::test::request()
+            .method("PUT")
+            .path("/api/kv/foo")
+            .body(b"replacement")
+            .filter(&routes)
+            .await
+            .unwrap();
+        let update_response = update_reply.into_response();
+        assert_eq!(update_response.status(), StatusCode::FORBIDDEN);
+
+        let body = hyper::body::to_bytes(update_response.into_body())
+            .await
+            .unwrap();
+        let body: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(
+            body["message"],
+            "The specified key cannot be updated, it is currently locked."
+        );
+
+        let get_reply = warp::test::request()
+            .path("/api/kv/foo")
+            .filter(&routes)
+            .await
+            .unwrap();
+        let get_response = get_reply.into_response();
+        assert_eq!(get_response.status(), StatusCode::OK);
+
+        let body = hyper::body::to_bytes(get_response.into_body())
+            .await
+            .unwrap();
+        assert_eq!(&*body, b"original");
     }
 
     #[tokio::test]

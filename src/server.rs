@@ -16,7 +16,7 @@ use warp::{
 use warp::{sse::ServerSentEvent, Filter};
 
 use crate::configuration::{Claims, Configuration};
-use crate::kvstore::KvStore;
+use crate::kvstore::{KvStore, SetError};
 
 #[derive(Debug, Clone)]
 pub struct SseMessage {
@@ -232,37 +232,44 @@ async fn put_key(
         }))
     } else {
         match store.set(key.clone(), body.to_vec(), mime) {
-            Some(kv_element) => {
-                if kv_element.locked {
-                    Ok(warp::reply::with_status(warp::reply::json(&JsonMessage {
-                        message: "The specified key cannot be updated, it is currently locked.".to_string(),
-                    }), StatusCode::FORBIDDEN))
-                } else {
-                    if config.read().unwrap().sse.enabled {
-                        // TODO: Send an SSE fallaback message for binary data
-                        match String::from_utf8((&body).bytes().to_vec()) {
-                            Ok(byte_to_string) => {
-                                event_tx
-                                    .send(SseMessage {
-                                        key: key.clone(),
-                                        value: byte_to_string,
-                                    })
-                                    .map_err(|error| {
-                                        error!("Unable to broadcast this key: {:?}", &error.0.key)
-                                    })
-                                    .ok();
-                            }
-                            Err(error) => warn!("Unable to broadcast binary data, {}", error),
+            Ok(Some(_)) => {
+                if config.read().unwrap().sse.enabled {
+                    // TODO: Send an SSE fallaback message for binary data
+                    match String::from_utf8((&body).bytes().to_vec()) {
+                        Ok(byte_to_string) => {
+                            event_tx
+                                .send(SseMessage {
+                                    key: key.clone(),
+                                    value: byte_to_string,
+                                })
+                                .map_err(|error| {
+                                    error!("Unable to broadcast this key: {:?}", &error.0.key)
+                                })
+                                .ok();
                         }
+                        Err(error) => warn!("Unable to broadcast binary data, {}", error),
                     }
-                    Ok(warp::reply::with_status(warp::reply::json(&JsonMessage {
-                        message: "The specified key was successfully updated.".to_string(),
-                    }), StatusCode::OK))
                 }
+                Ok(warp::reply::with_status(
+                    warp::reply::json(&JsonMessage {
+                        message: "The specified key was successfully updated.".to_string(),
+                    }),
+                    StatusCode::OK,
+                ))
             }
-            None => Ok(warp::reply::with_status(warp::reply::json(&JsonMessage {
-                message: "The specified key was successfully created.".to_string(),
-            }), StatusCode::CREATED))
+            Ok(None) => Ok(warp::reply::with_status(
+                warp::reply::json(&JsonMessage {
+                    message: "The specified key was successfully created.".to_string(),
+                }),
+                StatusCode::CREATED,
+            )),
+            Err(SetError::Locked) => Ok(warp::reply::with_status(
+                warp::reply::json(&JsonMessage {
+                    message: "The specified key cannot be updated, it is currently locked."
+                        .to_string(),
+                }),
+                StatusCode::FORBIDDEN,
+            )),
         }
     }
 }

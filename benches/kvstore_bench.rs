@@ -13,14 +13,14 @@ fn set_1_kb_data(c: &mut Criterion) {
     let kv = KvStore::new(CIPHER);
 
     c.bench_function("Set 1KB", |b| {
-        b.iter(|| kv.set("bench_one".to_string(), DATA.to_vec()))
+        b.iter(|| kv.set("bench_one".to_string(), DATA.to_vec(), None))
     });
 }
 fn get_1_kb_data(c: &mut Criterion) {
     let kv = KvStore::new(CIPHER);
 
     let k = String::from("bench_one");
-    kv.set(k.clone(), DATA.to_vec());
+    kv.set(k.clone(), DATA.to_vec(), None).unwrap();
 
     c.bench_function("Get 1KB", |b| b.iter(|| kv.get(k.clone())));
 }
@@ -29,14 +29,14 @@ fn set_1_kb_data_without_encryption(c: &mut Criterion) {
     let kv = KvStore::new(None);
 
     c.bench_function("Set 1KB (w/o encrytion)", |b| {
-        b.iter(|| kv.set("bench_one".to_string(), DATA.to_vec()))
+        b.iter(|| kv.set("bench_one".to_string(), DATA.to_vec(), None))
     });
 }
 fn get_1_kb_data_without_encryption(c: &mut Criterion) {
     let kv = KvStore::new(None);
 
     let k = String::from("bench_one");
-    kv.set(k.clone(), DATA.to_vec());
+    kv.set(k.clone(), DATA.to_vec(), None).unwrap();
 
     c.bench_function("Get 1KB (w/o encryption)", |b| b.iter(|| kv.get(k.clone())));
 }

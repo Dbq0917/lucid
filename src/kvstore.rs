@@ -7,6 +7,21 @@ use serpent::Serpent;
 
 type SerpentCbc = Cbc<Serpent, ZeroPadding>;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SetError {
+    Locked,
+}
+
+impl std::fmt::Display for SetError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SetError::Locked => write!(f, "The specified key is locked."),
+        }
+    }
+}
+
+impl std::error::Error for SetError {}
+
 #[derive(Debug, Clone)]
 pub struct KvElement {
     pub data: Vec<u8>,
@@ -46,7 +61,12 @@ impl KvStore {
         kv
     }
 
-    pub fn set(&self, key: String, mut value: Vec<u8>, mime: Option<String>) -> Option<KvElement> {
+    pub fn set(
+        &self,
+        key: String,
+        mut value: Vec<u8>,
+        mime: Option<String>,
+    ) -> Result<Option<KvElement>, SetError> {
         // TODO: prepare iterative persistence
         if let Some(c) = &self.cipher {
             let cipher = SerpentCbc::new_var(&c.priv_key, &c.iv).unwrap();
@@ -56,29 +76,40 @@ impl KvStore {
             Some(gived_mimetype) => gived_mimetype,
             None => tree_magic::from_u8(value.as_ref()).to_string(),
         };
-        match &mut self.container.get_mut(&key) {
-            Some(kv_element) => {
-                if !kv_element.locked {
-                    kv_element.data = value;
-                    kv_element.mime_type = mime_type;
+        let mut result = Err(SetError::Locked);
+
+        self.container.alter(key, |current| match current {
+            Some(mut kv_element) => {
+                if kv_element.locked {
+                    result = Err(SetError::Locked);
+                    return Some(kv_element);
                 }
-                kv_element.updated_at = Utc::now();
-                kv_element.update_count = kv_element.update_count + 1;
-                Some(kv_element.to_owned())
+
+                let now = Utc::now();
+                kv_element.data = value;
+                kv_element.mime_type = mime_type;
+                kv_element.updated_at = now;
+                kv_element.update_count += 1;
+                result = Ok(Some(kv_element.clone()));
+                Some(kv_element)
             }
             None => {
+                let now = Utc::now();
                 let kv_element = KvElement {
                     data: value,
                     mime_type,
-                    created_at: Utc::now(),
-                    updated_at: Utc::now(),
-                    expire_at: Utc::now(),
+                    created_at: now,
+                    updated_at: now,
+                    expire_at: now,
                     update_count: 1,
                     locked: false,
                 };
-                self.container.insert(key, kv_element)
+                result = Ok(None);
+                Some(kv_element)
             }
-        }
+        });
+
+        result
     }
 
     pub fn get(&self, key: String) -> Option<KvElement> {
